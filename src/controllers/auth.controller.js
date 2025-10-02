@@ -10,12 +10,12 @@ const createNewUserObject = newUser => ({
 
 const loginUser = catchAsync(async (req, res) => {
   const user = req.user.__t === 'Student' ? await userService.getStudent(req.user._id) : req.user;
-  res.status(200).send({ data: req.user });
+  res.status(httpStatus.OK).json({ data: req.user });
 });
 
 const registerUser = catchAsync(async (req, res) => {
   if (req.user) {
-    res.status(httpStatus.CONFLICT).send({ message: 'User already exist' });
+    res.status(httpStatus.CONFLICT).json({ message: 'User already exist' });
     // } else if (!req.newUser.email_verified) {
     //   res.status(401).send({ message: "Email not verified" });
   } else {
@@ -34,7 +34,7 @@ const registerUser = catchAsync(async (req, res) => {
       default:
         break;
     }
-    res.status(201).send({ data: user });
+    res.status(httpStatus.CREATED).json({ data: user });
   }
 });
 

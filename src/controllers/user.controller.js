@@ -5,12 +5,12 @@ const {userService} = require('../services');
 
 const updateUser = catchAsync(async (req, res) => {
   const updatedUser = await userService.updateUserById(req.user._id, req.body, req.file);
-  res.status(200).send({data: updatedUser, message: 'Your details are updated'});
+  res.status(httpStatus.OK).json({data: updatedUser, message: 'Your details are updated'});
 });
 
 const updatePreferences = catchAsync(async (req, res) => {
   const updatedUser = await userService.updatePreferencesById(req.user._id, req.body);
-  res.status(200).send({data: updatedUser, message: 'Your preferences are updated'});
+  res.status(httpStatus.OK).json({data: updatedUser, message: 'Your preferences are updated'});
 });
 
 const softDeleteUser = catchAsync(async (req, res) => {
@@ -19,14 +19,14 @@ const softDeleteUser = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.UNAUTHORIZED, 'Sorry, you are not authorized to do this');
   }
   await userService.markUserAsDeletedById(req.params.userId);
-  res.status(200).send({
+  res.status(httpStatus.OK).json({
     message: 'User has been removed successfully.',
   });
 });
 
 const deleteUser = catchAsync(async (req, res) => {
   await userService.deleteUserById(req.params.userId);
-  res.status(200).send({message: 'The user deletion process has been completed successfully.'});
+  res.status(httpStatus.OK).json({message: 'The user deletion process has been completed successfully.'});
 });
 
 module.exports = {
