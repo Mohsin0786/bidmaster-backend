@@ -13,8 +13,7 @@ const userValidator = user => {
 };
 
 async function getUserById(id) {
-  const user = await User.findById(id);
-  userValidator(user);
+  const user = await User.findById(id).select('-password -isDeleted -isBlocked -isEmailVerified -__v -firebaseUid -firebaseSignInProvider');
   return user;
 }
 

@@ -9,6 +9,9 @@ const {fileUploadService} = require('../../microservices');
 
 const router = express.Router();
 
+// get my profile
+router.get('/me', firebaseAuth('All'), userController.getMe);
+
 // for updating userDetails
 router.patch(
   '/updateDetails',
