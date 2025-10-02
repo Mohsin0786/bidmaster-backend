@@ -1,4 +1,4 @@
-const { authService, favouriteService, userService } = require('../services');
+const { authService, userService } = require('../services');
 const catchAsync = require('../utils/catchAsync');
 const httpStatus = require('http-status');
 const createNewUserObject = newUser => ({
