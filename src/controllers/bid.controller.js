@@ -2,6 +2,7 @@ const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
 const { bidService } = require('../services');
 const { fileUploadService } = require('../microservices');
+const logger = require('../config/logger');
 
 // POST /v1/bids
 const createBid = catchAsync(async (req, res) => {
@@ -20,6 +21,8 @@ const createBid = catchAsync(async (req, res) => {
     attachments,
   });
 
+  logger.info(`Bid created successfully for requirement ${requirementId} by user ${req.user._id}`);
+
   res.status(httpStatus.CREATED).json({ data: bid });
 });
 
@@ -31,4 +34,34 @@ const listBids = catchAsync(async (req, res) => {
   res.json({ data });
 });
 
-module.exports = { createBid, listBids };
+// PATCH /v1/bids/:bidId
+const updateBid = catchAsync(async (req, res) => {
+  let attachments;
+  if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+    attachments = await fileUploadService.s3Upload(req.files, 'bids');
+  }
+
+  const { bidId } = req.params;
+  const { offeredPrice, deliveryDays, notes } = req.body;
+
+  const bid = await bidService.updateBid({
+    user: req.user,
+    bidId,
+    offeredPrice: Number(offeredPrice),
+    deliveryDays: deliveryDays != null ? Number(deliveryDays) : undefined,
+    notes,
+    attachments,
+  });
+  logger.info(`Bid updated successfully for requirement ${bid.requirement} by user ${req.user._id}`);
+
+  res.json({ data: bid });
+});
+
+// GET /v1/bids/my?requirementId=...
+const getMyBid = catchAsync(async (req, res) => {
+  const { requirementId } = req.query;
+  const bid = await bidService.getMyBid({ requirementId, user: req.user });
+  res.json({ data: bid });
+});
+
+module.exports = { createBid, listBids, updateBid, getMyBid };

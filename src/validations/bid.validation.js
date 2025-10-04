@@ -20,4 +20,23 @@ const listBids = {
   }),
 };
 
-module.exports = { createBid, listBids };
+const updateBid = {
+  params: Joi.object().keys({
+    bidId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      offeredPrice: Joi.number().positive().required(),
+      deliveryDays: Joi.number().integer().min(0).optional(),
+      notes: Joi.string().trim().allow('').optional(),
+    })
+    .required(),
+};
+
+const getMyBid = {
+  query: Joi.object().keys({
+    requirementId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+module.exports = { createBid, listBids, updateBid, getMyBid };

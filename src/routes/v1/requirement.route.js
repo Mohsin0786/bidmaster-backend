@@ -20,6 +20,14 @@ router.post(
 // List requirements
 router.get('/', firebaseAuth('All'), validate(requirementValidation.getRequirements), requirementController.getRequirements);
 
+// List invited ACTIVE requirements for current user (place BEFORE parameterized routes)
+router.get(
+  '/invited',
+  firebaseAuth('All'),
+  validate(requirementValidation.getInvitedRequirements),
+  requirementController.getInvitedRequirements
+);
+
 // Get a single requirement
 router.get(
   '/:requirementId',
@@ -46,3 +54,4 @@ router.delete(
 );
 
 module.exports = router;
+

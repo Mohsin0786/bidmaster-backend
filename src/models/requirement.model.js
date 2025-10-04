@@ -11,7 +11,9 @@ const requirementSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      required: true,
+      required: function () {
+        return this.status !== REQUIREMENT_STATUS.DRAFT;
+      },
       trim: true,
     },
     category: {
@@ -26,25 +28,35 @@ const requirementSchema = new mongoose.Schema(
     ],
     currency: {
       type: String,
-      required: true,
+      required: function () {
+        return this.status !== REQUIREMENT_STATUS.DRAFT;
+      },
       trim: true,
       default: 'INR',
     },
     ceilingPrice: {
       type: Number,
-      required: true,
+      required: function () {
+        return this.status !== REQUIREMENT_STATUS.DRAFT;
+      },
     },
     minDecrement: {
       type: Number,
-      required: true,
+      required: function () {
+        return this.status !== REQUIREMENT_STATUS.DRAFT;
+      },
     },
     startTime: {
       type: Date,
-      required: true,
+      required: function () {
+        return this.status !== REQUIREMENT_STATUS.DRAFT;
+      },
     },
     endTime: {
       type: Date,
-      required: true,
+      required: function () {
+        return this.status !== REQUIREMENT_STATUS.DRAFT;
+      },
     },
     participants: [
       {

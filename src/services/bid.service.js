@@ -1,7 +1,7 @@
 const httpStatus = require('http-status');
 const { Requirement, Bid } = require('../models');
 const ApiError = require('../utils/ApiError');
-
+const logger = require('../config/logger');
 /**
  * Ensure requirement exists and is within time window
  */
@@ -52,6 +52,7 @@ function assertPriceRules({ offeredPrice, ceilingPrice, minDecrement, currentBes
         `First bid must be <= ceiling price (${ceilingPrice})`
       );
     }
+    logger.info(`First bid: ${offeredPrice} <= ceiling price: ${ceilingPrice}`);
   } else {
     const requiredMax = currentBest - minDecrement;
     if (offeredPrice > requiredMax) {
@@ -60,6 +61,7 @@ function assertPriceRules({ offeredPrice, ceilingPrice, minDecrement, currentBes
         `Bid must be <= ${requiredMax} (best ${currentBest} - decrement ${minDecrement})`
       );
     }
+    logger.info(`Subsequent bid: ${offeredPrice} <= required max: ${requiredMax}`);
   }
 }
 
@@ -69,13 +71,24 @@ function assertPriceRules({ offeredPrice, ceilingPrice, minDecrement, currentBes
 async function createBid({ user, requirementId, offeredPrice, deliveryDays, notes, attachments }) {
   const requirement = await getOpenRequirement(requirementId);
 
+  
   if (requirement.createdBy.toString() === user._id.toString()) {
     throw new ApiError(httpStatus.FORBIDDEN, 'Creator cannot bid on own requirement');
   }
 
   assertBidderEligibility(requirement, user);
 
+  // Reject if user already has a bid on this requirement
+  const existing = await Bid.findOne({ requirement: requirement._id, bidder: user._id });
+  if (existing) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Cannot place bid: a bid for this requirement by this user already exists'
+    );
+  }
+
   const currentBest = await getCurrentBestPrice(requirement._id);
+  logger.info(`Current best price for requirement ${requirement._id}: ${currentBest}`);
   assertPriceRules({
     offeredPrice,
     ceilingPrice: requirement.ceilingPrice,
@@ -83,14 +96,26 @@ async function createBid({ user, requirementId, offeredPrice, deliveryDays, note
     currentBest,
   });
 
-  const bid = await Bid.create({
-    requirement: requirement._id,
-    bidder: user._id,
-    offeredPrice,
-    deliveryDays: deliveryDays ?? null,
-    notes: notes || '',
-    attachments: attachments || [],
-  });
+  let bid;
+  try {
+    bid = await Bid.create({
+      requirement: requirement._id,
+      bidder: user._id,
+      offeredPrice,
+      deliveryDays: deliveryDays ?? null,
+      notes: notes || '',
+      attachments: attachments || [],
+    });
+  } catch (err) {
+    // Handle duplicate key error from unique index (requirement, bidder)
+    if (err && err.code === 11000) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot place bid: a bid for this requirement by this user already exists'
+      );
+    }
+    throw err;
+  }
 
   return bid;
 }
@@ -104,6 +129,7 @@ async function listBids({ requirementId, user, options }) {
   if (!requirement) throw new ApiError(httpStatus.NOT_FOUND, 'Requirement not found');
 
   const filter = { requirement: requirementId };
+  logger.info(`Listing bids for requirement ${requirementId} by user ${user._id}`);
   if (requirement.createdBy.toString() !== user._id.toString()) {
     filter.bidder = user._id; // blind bidding for others
   }
@@ -111,4 +137,53 @@ async function listBids({ requirementId, user, options }) {
   return Bid.paginate(filter, options);
 }
 
-module.exports = { createBid, listBids };
+/**
+ * Update a bid (only by its owner) within the bidding window
+ */
+async function updateBid({ user, bidId, offeredPrice, deliveryDays, notes, attachments }) {
+  const bid = await Bid.findById(bidId);
+  if (!bid) throw new ApiError(httpStatus.NOT_FOUND, 'Bid not found');
+
+  if (bid.bidder.toString() !== user._id.toString()) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'You can only update your own bid');
+  }
+
+  // Ensure requirement exists and is open
+  const requirement = await getOpenRequirement(bid.requirement);
+
+  // Compute current best excluding this bid
+  const top = await Bid.find({ requirement: requirement._id, _id: { $ne: bid._id } })
+    .sort({ offeredPrice: 1 })
+    .limit(1);
+  const currentBestExcludingSelf = top.length ? top[0].offeredPrice : null;
+
+  assertPriceRules({
+    offeredPrice,
+    ceilingPrice: requirement.ceilingPrice,
+    minDecrement: requirement.minDecrement,
+    currentBest: currentBestExcludingSelf,
+  });
+
+  // Apply updates
+  bid.offeredPrice = offeredPrice;
+  if (deliveryDays != null) bid.deliveryDays = deliveryDays;
+  if (typeof notes === 'string') bid.notes = notes;
+  if (attachments) bid.attachments = attachments; // replace if provided
+
+  await bid.save();
+  return bid;
+}
+
+/**
+ * Get current user's bid for a requirement
+ */
+async function getMyBid({ requirementId, user }) {
+  const requirement = await Requirement.findById(requirementId);
+  if (!requirement) throw new ApiError(httpStatus.NOT_FOUND, 'Requirement not found');
+
+  const bid = await Bid.findOne({ requirement: requirementId, bidder: user._id });
+  if (!bid) throw new ApiError(httpStatus.NOT_FOUND, 'No bid found for this requirement by this user');
+  return bid;
+}
+
+module.exports = { createBid, listBids, updateBid, getMyBid };

@@ -35,7 +35,7 @@ const firebaseAuth = (allowUserType = 'All') => async (req, res, next) => {
         return next(new ApiError(httpStatus.NOT_FOUND, "User doesn't exist. Please create account"));
       }
     }
-    logger.info(`Authorized user: ${user}`);
+
     // If user is blocked or deleted
     if (user.isBlocked) return next(new ApiError(httpStatus.FORBIDDEN, 'User is blocked'));
     if (user.isDeleted) return next(new ApiError(httpStatus.GONE, "User doesn't exist anymore"));

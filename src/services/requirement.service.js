@@ -3,6 +3,8 @@ const { Requirement } = require('../models');
 const { User } = require('../models');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
+const moment = require('moment-timezone');
+const { REQUIREMENT_STATUS, PARTICIPANT_STATUS } = require('../constants/requirement');
 
 /**
  * Create a requirement
@@ -11,38 +13,28 @@ const logger = require('../config/logger');
  * @returns {Promise<Requirement>}
  */
 const createRequirement = async (requirementBody, userId) => {
-  const { participantEmails, ...requirementData } = requirementBody;
+  const { participantEmails, status, ...rest } = requirementBody;
 
-  // Process participant emails
-  const participants = [];
-  if (participantEmails && participantEmails.length > 0) {
+  let participants = [];
+  // Only prepare participant invitations for ACTIVE requirements
+  if (status !== REQUIREMENT_STATUS.DRAFT && participantEmails && participantEmails.length > 0) {
     for (const email of participantEmails) {
-      // Check if user exists
       const user = await User.findOne({ email });
-      
-      if (user) {
-        // User exists - store their ID
-        participants.push({
-          email,
-          userId: user._id,
-          status: 'INVITED',
-        });
-        logger.info(`Participant ${email} found and invited (userId: ${user._id})`);
-      } else {
-        // User doesn't exist yet - just store email
-        participants.push({
-          email,
-          userId: null,
-          status: 'INVITED',
-        });
-        logger.info(`Participant ${email} invited (not yet registered)`);
-      }
+      participants.push({
+        email,
+        userId: user ? user._id : null,
+        status: PARTICIPANT_STATUS.INVITED,
+      });
+      logger.info(
+        `Participant ${email} ${user ? `found (userId: ${user._id})` : 'invited (not yet registered)'}.`
+      );
     }
   }
+  logger.info('Requirement created successfully');
 
-  // Create the requirement
   const requirement = await Requirement.create({
-    ...requirementData,
+    ...rest,
+    status: status || REQUIREMENT_STATUS.DRAFT,
     participants,
     createdBy: userId,
   });
@@ -89,22 +81,53 @@ const updateRequirementById = async (requirementId, updateBody, userId) => {
     throw new ApiError(httpStatus.FORBIDDEN, 'You can only update your own requirements');
   }
 
-  // Process participant emails if provided
-  if (updateBody.participantEmails) {
+  // If status transitioning to ACTIVE, enforce completeness and process participant invitations
+  const isActivating = updateBody.status === REQUIREMENT_STATUS.ACTIVE && requirement.status !== REQUIREMENT_STATUS.ACTIVE;
+
+  logger.info(`Requirement ${requirementId} is being updated by ${userId}`);
+  // Handle participant emails only when activating or already ACTIVE
+  if (updateBody.participantEmails && (isActivating || requirement.status === REQUIREMENT_STATUS.ACTIVE)) {
     const participants = [];
     for (const email of updateBody.participantEmails) {
       const user = await User.findOne({ email });
       participants.push({
         email,
         userId: user ? user._id : null,
-        status: 'INVITED',
+        status: PARTICIPANT_STATUS.INVITED,
       });
     }
+    logger.info('Participant emails processed successfully');
     updateBody.participants = participants;
     delete updateBody.participantEmails;
+  } else {
+    // ignore participantEmails updates while in DRAFT
+    delete updateBody.participantEmails;
   }
+  logger.info('Requirement updated successfully');
 
   Object.assign(requirement, updateBody);
+
+  if (isActivating) {
+    // Ensure required fields are present before activation
+    const missing = [];
+    if (!requirement.title) missing.push('title');
+    if (!requirement.description) missing.push('description');
+    if (!requirement.currency) missing.push('currency');
+    if (requirement.ceilingPrice == null) missing.push('ceilingPrice');
+    if (requirement.minDecrement == null) missing.push('minDecrement');
+    if (!requirement.startTime) missing.push('startTime');
+    if (!requirement.endTime) missing.push('endTime');
+    if (missing.length) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Cannot activate requirement. Missing fields: ${missing.join(', ')}`
+      );
+    }
+    if (new Date(requirement.endTime) <= new Date(requirement.startTime)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'endTime must be greater than startTime');
+    }
+  }
+
   await requirement.save();
   return requirement;
 };
@@ -127,10 +150,92 @@ const deleteRequirementById = async (requirementId, userId) => {
   return requirement;
 };
 
+/**
+ * List ACTIVE requirements where the current user is invited
+ * @param {Object} user - current user (expects _id and email)
+ * @param {Object} options - pagination/sort options
+ * @returns {Promise<QueryResult>}
+ */
+const createBaseInvitedFilter = (user) => ({
+  $or: [
+    { 'participants.userId': user._id },
+    ...(user.email ? [{ 'participants.email': user.email }] : [])
+  ]
+});
+
+const createTimeFilters = (now) => ({
+  live: {
+    startTime: { $lte: now },
+    endTime: { $gt: now }
+  },
+  upcoming: {
+    startTime: { $gt: now }
+  },
+  all: {} // No time filters for 'all'
+});
+
+const listInvitedActiveRequirements = async (user, options, window = 'all', timezone) => {
+  const now = moment().tz(timezone).toDate();
+  logger.info(`Current time in ${timezone}: ${now}`);
+  const baseInvited = createBaseInvitedFilter(user);
+  const timeFilters = createTimeFilters(now);
+  logger.info(`Time filters: ${JSON.stringify(timeFilters)}`);
+  const filter = {
+    status: REQUIREMENT_STATUS.ACTIVE,
+    ...baseInvited,
+    ...(timeFilters[window] || timeFilters.all)
+  };
+  logger.info(`Filter: ${JSON.stringify(filter)}`);
+
+  // Ensure createdBy is populated with basic identity fields using plugin's string format
+  const populate = 'createdBy::firstName,lastName';
+
+  // Add pipeline to compute totalBidders (distinct bidders who placed a bid on this requirement)
+  const pipeline = [
+    {
+      $lookup: {
+        from: 'bids',
+        localField: '_id',
+        foreignField: 'requirement',
+        as: 'bids_for_req',
+      },
+    },
+    {
+      $addFields: {
+        totalBidders: {
+          $size: {
+            $setUnion: [
+              {
+                $map: { input: '$bids_for_req', as: 'b', in: '$$b.bidder' },
+              },
+              [],
+            ],
+          },
+        },
+      },
+    },
+    { $unset: 'bids_for_req' },
+  ];
+
+  const project = {
+    title: 1,
+    category: 1,
+    startTime: 1,
+    endTime: 1,
+    createdBy: 1,
+    createdAt: 1,
+    ceilingPrice: 1,
+    totalBidders: 1,
+  }; // only include these
+
+  const paginateOptions = { ...options, populate, project, pipeline };
+  return Requirement.paginate(filter, paginateOptions);
+};
 module.exports = {
   createRequirement,
   queryRequirements,
   getRequirementById,
   updateRequirementById,
   deleteRequirementById,
+  listInvitedActiveRequirements,
 };
