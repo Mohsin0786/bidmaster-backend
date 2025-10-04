@@ -127,14 +127,24 @@ async function listBids({ requirementId, user, options }) {
   // Basic access control: if requester is creator, allow; otherwise show only own bids
   const requirement = await Requirement.findById(requirementId);
   if (!requirement) throw new ApiError(httpStatus.NOT_FOUND, 'Requirement not found');
-
+  if (requirement.createdBy.toString() !== user._id.toString()) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'You are not authorized to view this requirement');
+  }
   const filter = { requirement: requirementId };
   logger.info(`Listing bids for requirement ${requirementId} by user ${user._id}`);
-  if (requirement.createdBy.toString() !== user._id.toString()) {
-    filter.bidder = user._id; // blind bidding for others
-  }
-
-  return Bid.paginate(filter, options);
+  const populate = ['bidder::firstName,lastName,email'];
+  const project = {
+    requirement: 1,
+    bidder: 1,
+    offeredPrice: 1,
+    deliveryDays: 1,
+    notes: 1,
+    attachments: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const paginateOptions = { ...options, populate, project };
+  return Bid.paginate(filter, paginateOptions);
 }
 
 /**
