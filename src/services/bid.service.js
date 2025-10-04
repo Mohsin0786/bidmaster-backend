@@ -2,6 +2,7 @@ const httpStatus = require('http-status');
 const { Requirement, Bid } = require('../models');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
+const moment = require('moment-timezone');
 /**
  * Ensure requirement exists and is within time window
  */
@@ -71,7 +72,7 @@ function assertPriceRules({ offeredPrice, ceilingPrice, minDecrement, currentBes
 async function createBid({ user, requirementId, offeredPrice, deliveryDays, notes, attachments }) {
   const requirement = await getOpenRequirement(requirementId);
 
-  
+
   if (requirement.createdBy.toString() === user._id.toString()) {
     throw new ApiError(httpStatus.FORBIDDEN, 'Creator cannot bid on own requirement');
   }
@@ -124,7 +125,7 @@ async function createBid({ user, requirementId, offeredPrice, deliveryDays, note
  * List bids for a requirement (buyer can view; seller can view own bids)
  */
 async function listBids({ requirementId, user, options }) {
-  // Basic access control: if requester is creator, allow; otherwise show only own bids
+
   const requirement = await Requirement.findById(requirementId);
   if (!requirement) throw new ApiError(httpStatus.NOT_FOUND, 'Requirement not found');
   if (requirement.createdBy.toString() !== user._id.toString()) {
@@ -196,4 +197,61 @@ async function getMyBid({ requirementId, user }) {
   return bid;
 }
 
-module.exports = { createBid, listBids, updateBid, getMyBid };
+/**
+ * List current user's bids with optional filters
+ * - status: undefined => all my bids
+ * - status: 'active' => bids where requirement is currently active (startTime <= now < endTime)
+ * - status: 'won' => bids where requirement is ended and winningBid equals this bid's _id
+ * - status: 'lost' => bids where requirement is ended and winningBid != this bid's _id and winningBid != null
+ */
+async function listMyBids({ user, status, options, timezone }) {
+  const now = moment().tz(timezone).toDate();
+  logger.info(`Current time in ${timezone}: ${now}`);
+  const filters = { bidder: user._id };
+
+  // Always populate requirement fields we need for filtering
+  const populate = [
+    'requirement::startTime,endTime,winningBid,title',
+  ];
+
+  // Post-population filters operate on populated fields
+  const postPopulateFilters = {};
+
+  if (status === 'active') {
+    postPopulateFilters['requirement.startTime'] = { $lte: now };
+    postPopulateFilters['requirement.endTime'] = { $gt: now };
+  } else if (status === 'won') {
+    // ended and this bid is the winner
+    postPopulateFilters['requirement.endTime'] = { $lte: now };
+    postPopulateFilters.$expr = { $eq: ['$requirement.winningBid', '$_id'] };
+  } else if (status === 'lost') {
+    // ended, there is a winner, and it's not this bid
+    postPopulateFilters['requirement.endTime'] = { $lte: now };
+    postPopulateFilters.$expr = {
+      $and: [
+        { $ne: ['$requirement.winningBid', null] },
+        { $ne: ['$requirement.winningBid', '$_id'] },
+      ],
+    };
+  }
+
+  const project = {
+    requirement: 1,
+    bidder: 1,
+    offeredPrice: 1,
+    deliveryDays: 1,
+    notes: 1,
+    attachments: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const paginateOptions = { ...options, populate, project };
+
+  if (Object.keys(postPopulateFilters).length > 0) {
+    return Bid.paginate({ ...filters, postPopulateFilters }, paginateOptions);
+  }
+  return Bid.paginate(filters, paginateOptions);
+}
+
+module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids };

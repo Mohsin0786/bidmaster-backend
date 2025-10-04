@@ -39,4 +39,14 @@ const getMyBid = {
   }),
 };
 
-module.exports = { createBid, listBids, updateBid, getMyBid };
+const listMyBids = {
+  query: Joi.object().keys({
+    status: Joi.string().valid('active', 'won', 'lost').optional(),
+    sortBy: Joi.string().valid('createdAt', 'offeredPrice').default('createdAt'),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+    limit: Joi.number().integer(),
+    page: Joi.number().integer(),
+  }),
+};
+
+module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids };

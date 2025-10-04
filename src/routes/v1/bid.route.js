@@ -17,7 +17,7 @@ router.post(
   bidController.createBid
 );
 
-// List bids for a requirement (creator sees all, others see own bids)
+// List bids for a requirement
 router.get('/', firebaseAuth('All'), validate(bidValidation.listBids), bidController.listBids);
 
 // Update an existing bid
@@ -31,6 +31,9 @@ router.patch(
 
 // Get my bid for a requirement
 router.get('/my', firebaseAuth('All'), validate(bidValidation.getMyBid), bidController.getMyBid);
+
+// List all my bids with optional status filter (active|won|lost)
+router.get('/my-bids', firebaseAuth('All'), validate(bidValidation.listMyBids), bidController.listMyBids);
 
 
 

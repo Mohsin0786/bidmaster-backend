@@ -57,11 +57,20 @@ const updateBid = catchAsync(async (req, res) => {
   res.json({ data: bid });
 });
 
-// GET /v1/bids/my?requirementId=...
+
 const getMyBid = catchAsync(async (req, res) => {
   const { requirementId } = req.query;
   const bid = await bidService.getMyBid({ requirementId, user: req.user });
   res.json({ data: bid });
 });
 
-module.exports = { createBid, listBids, updateBid, getMyBid };
+// GET /v1/bids/my-bids?status=active|won|lost
+const listMyBids = catchAsync(async (req, res) => {
+  const { status, sortBy, sortOrder, page, limit } = req.query;
+  const options = { sortBy, sortOrder, page, limit };
+  const timezone = req.get('X-Timezone') || 'UTC';
+  const data = await bidService.listMyBids({ user: req.user, status, options, timezone });
+  res.json({ data });
+});
+
+module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids };
