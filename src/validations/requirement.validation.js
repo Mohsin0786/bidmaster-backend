@@ -37,10 +37,10 @@ const getRequirements = {
     title: Joi.string(),
     category: Joi.string(),
     status: Joi.string().valid('DRAFT', 'ACTIVE', 'CLOSED', 'AWARDED'),
-    sortBy: Joi.string(),
-    sortOrder: Joi.string().valid('asc', 'desc'),
-    limit: Joi.number().integer(),
-    page: Joi.number().integer(),
+    sortBy: Joi.string().default('createdAt'),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+    limit: Joi.number().integer().default(10),
+    page: Joi.number().integer().default(1),
   }),
 };
 
