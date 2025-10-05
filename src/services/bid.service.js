@@ -3,6 +3,8 @@ const { Requirement, Bid } = require('../models');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
 const moment = require('moment-timezone');
+const { emitBidNew, emitBidUpdated, notifyAllBiddersRanks, emitRequirementStats } = require('../events/bid.events');
+
 /**
  * Ensure requirement exists and is within time window
  */
@@ -41,6 +43,8 @@ async function getCurrentBestPrice(requirementId) {
     .limit(1);
   return top.length ? top[0].offeredPrice : null;
 }
+
+
 
 /**
  * Enforce pricing rules: first bid <= ceilingPrice; subsequent bids <= best - minDecrement
@@ -118,6 +122,35 @@ async function createBid({ user, requirementId, offeredPrice, deliveryDays, note
     throw err;
   }
 
+  // Emit real-time update to the requirement room
+  // try {
+  //   const newBest = await getCurrentBestPrice(requirement._id);
+  //   const rank = await getBidRank({
+  //     requirementId: requirement._id,
+  //     offeredPrice: bid.offeredPrice,
+  //     createdAt: bid.createdAt,
+  //   });
+  //   await emitBidNew({
+  //     requirementId: requirement._id.toString(),
+  //     bid: {
+  //       _id: bid._id.toString(),
+  //       bidder: bid.bidder.toString(),
+  //       offeredPrice: bid.offeredPrice,
+  //       deliveryDays: bid.deliveryDays,
+  //       createdAt: bid.createdAt,
+  //     },
+  //     currentBest: newBest,
+  //     rank,
+  //   });
+    // Notify all bidders of their current rank and leading bid
+    try { await notifyAllBiddersRanks(requirement._id); } catch (_) {}
+    // Broadcast updated unique bidder count to the requirement room
+    try { await emitRequirementStats(requirement._id); } catch (_) {}
+  // } catch (e) {
+  //   // Do not block API on socket errors
+  //   logger.warn(`Socket emit failed for requirement ${requirement._id}: ${e.message}`);
+  // }
+
   return bid;
 }
 
@@ -182,6 +215,29 @@ async function updateBid({ user, bidId, offeredPrice, deliveryDays, notes, attac
   if (attachments) bid.attachments = attachments; // replace if provided
 
   await bid.save();
+  // Emit update with current rank and best price
+  // try {
+  //   const newBest = await getCurrentBestPrice(requirement._id);
+    // await emitBidUpdated({
+    //   requirementId: requirement._id.toString(),
+    //   bid: {
+    //     _id: bid._id.toString(),
+    //     bidder: bid.bidder.toString(),
+    //     offeredPrice: bid.offeredPrice,
+    //     deliveryDays: bid.deliveryDays,
+    //     createdAt: bid.createdAt,
+    //   },
+    //   currentBest: newBest,
+    // });
+    // Notify all bidders of their current rank and leading bid
+    try { await notifyAllBiddersRanks(requirement._id); } catch (e) {
+      logger.error('Failed to notify ranks:', e);
+    }
+    // Broadcast updated unique bidder count to the requirement room
+    // try { await emitRequirementStats(requirement._id); } catch (_) {}
+  // } catch (e) {
+  //   logger.warn(`Socket emit failed for bid update ${bid._id}: ${e.message}`);
+  // }
   return bid;
 }
 
