@@ -2,6 +2,8 @@ const app = require('./app');
 const config = require('./config/config');
 const logger = require('./config/logger');
 const mongoose = require('mongoose');
+const http = require('http');
+const { initSocket, shutdownSocket } = require('./socket');
 let server;
 
 mongoose
@@ -13,15 +15,25 @@ mongoose
     console.log(err);
   });
 
-app.listen(config.port, () => {
+// create HTTP server and initialize Socket.IO
+server = http.createServer(app);
+initSocket(server);
+
+server.listen(config.port, () => {
   console.log(`BiddingMaster app listening on port ${config.port}!`);
 });
 
 // ------------- Don't Modify  -------------
 const exitHandler = () => {
   if (server) {
-    server.close(() => {
-      logger.info('Server closed');
+    server.close(async () => {
+      logger.info('HTTP server closed');
+      try {
+        await shutdownSocket();
+        logger.info('Socket.IO closed');
+      } catch (e) {
+        logger.warn(`Socket shutdown error: ${e.message}`);
+      }
       process.exit(1);
     });
   } else {

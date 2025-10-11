@@ -26,6 +26,18 @@ const envVarsSchema = Joi.object()
     FIREBASE_STORAGE_BUCKET: Joi.string().required(),
     FIREBASE_MESSAGING_SENDER_ID: Joi.string().required(),
     FIREBASE_APP_ID: Joi.string().required(),
+    // Redis (optional): local or AWS Elasticache
+    REDIS_URL: Joi.string().uri().optional(),
+    REDIS_HOST: Joi.string().optional(),
+    REDIS_PORT: Joi.number().optional(),
+    REDIS_USERNAME: Joi.string().optional(),
+    REDIS_PASSWORD: Joi.string().optional(),
+    REDIS_TLS: Joi.boolean().optional(),
+    // Socket.IO (optional)
+    SOCKET_CORS_ORIGINS: Joi.string().optional(), // comma-separated
+    SOCKET_PATH: Joi.string().optional(),
+    SOCKET_PING_TIMEOUT_MS: Joi.number().optional(),
+    SOCKET_PING_INTERVAL_MS: Joi.number().optional()
 
   })
   .unknown();
@@ -66,5 +78,22 @@ module.exports = {
     storageBucket: envVars.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: envVars.FIREBASE_MESSAGING_SENDER_ID,
     appId: envVars.FIREBASE_APP_ID
+  },
+  // Redis configuration (optional)
+  redis: {
+    url: envVars.REDIS_URL || null,
+    host: envVars.REDIS_HOST || null,
+    port: envVars.REDIS_PORT || null,
+    username: envVars.REDIS_USERNAME || null,
+    password: envVars.REDIS_PASSWORD || null,
+    tls: envVars.REDIS_TLS || false,
+  },
+  socket: {
+    corsOrigins: envVars.SOCKET_CORS_ORIGINS
+      ? envVars.SOCKET_CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+      : ['*'],
+    path: envVars.SOCKET_PATH || '/socket.io',
+    pingTimeout: envVars.SOCKET_PING_TIMEOUT_MS || 20000,
+    pingInterval: envVars.SOCKET_PING_INTERVAL_MS || 25000,
   }
 };

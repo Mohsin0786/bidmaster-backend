@@ -3,11 +3,16 @@ const ApiError = require('../utils/ApiError');
 const catchAsync = require('../utils/catchAsync');
 const {userService} = require('../services');
 
+const getMe = catchAsync(async (req, res) => {
+  // req.user is set by firebaseAuth middleware after validation
+  const user = await userService.getUserById(req.user._id);
+  res.status(httpStatus.OK).json({data: user});
+});
+
 const updateUser = catchAsync(async (req, res) => {
   const updatedUser = await userService.updateUserById(req.user._id, req.body, req.file);
   res.status(httpStatus.OK).json({data: updatedUser, message: 'Your details are updated'});
 });
-
 const updatePreferences = catchAsync(async (req, res) => {
   const updatedUser = await userService.updatePreferencesById(req.user._id, req.body);
   res.status(httpStatus.OK).json({data: updatedUser, message: 'Your preferences are updated'});
@@ -30,6 +35,7 @@ const deleteUser = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  getMe,
   deleteUser,
   updateUser,
   softDeleteUser,

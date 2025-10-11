@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const {paginate} = require('./plugins/paginate');
+const {USER_ROLES} = require('../constants/user');
 
 const userSchema = new mongoose.Schema(
   {
@@ -67,6 +68,11 @@ const userSchema = new mongoose.Schema(
     firebaseSignInProvider: {
       type: String,
       required: true,
+    },
+    roles: {
+      type: [String],
+      enum: Object.values(USER_ROLES),
+      default: [USER_ROLES.BUYER, USER_ROLES.SELLER],
     },
     appNotificationsLastSeenAt: {
       type: Date,
