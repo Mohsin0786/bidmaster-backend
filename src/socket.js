@@ -8,8 +8,7 @@ const { Requirement } = require('./models/requirement.model');
 const { Bid } = require('./models/bid.model');
 const { setIO: setEventsIO } = require('./events/bid.events');
 const { notifyAllBiddersRanks, emitRequirementStats } = require('./events/bid.events');
-const { logger } = require('firebase-functions');
-
+const logger = require('./config/logger');
 let io;
 let redisPub;
 let redisSub;
