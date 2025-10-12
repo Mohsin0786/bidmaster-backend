@@ -37,7 +37,11 @@ const envVarsSchema = Joi.object()
     SOCKET_CORS_ORIGINS: Joi.string().optional(), // comma-separated
     SOCKET_PATH: Joi.string().optional(),
     SOCKET_PING_TIMEOUT_MS: Joi.number().optional(),
-    SOCKET_PING_INTERVAL_MS: Joi.number().optional()
+    SOCKET_PING_INTERVAL_MS: Joi.number().optional(),
+    // SendGrid (optional)
+    SENDGRID_API_KEY: Joi.string().optional(),
+    SENDGRID_FROM_EMAIL: Joi.string().email().optional(),
+    SENDGRID_FROM_NAME: Joi.string().optional()
 
   })
   .unknown();
@@ -54,6 +58,14 @@ module.exports = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
   // Twilio config removed since Twilio is not being used
+  // SendGrid (optional)
+  sendgrid: envVars.SENDGRID_API_KEY
+    ? {
+        apiKey: envVars.SENDGRID_API_KEY,
+        fromEmail: envVars.SENDGRID_FROM_EMAIL || undefined,
+        fromName: envVars.SENDGRID_FROM_NAME || undefined,
+      }
+    : null,
   aws: {
     s3: {
       name: envVars.AWS_S3_BUCKET,

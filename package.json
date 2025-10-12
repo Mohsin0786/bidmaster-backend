@@ -35,7 +35,8 @@
     "twilio": "^4.11.2",
     "uuid": "^9.0.0",
     "validator": "^13.9.0",
-    "winston": "^3.9.0"
+    "winston": "^3.9.0",
+    "@sendgrid/mail": "^8.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.4.0",
