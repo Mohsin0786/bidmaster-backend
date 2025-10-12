@@ -4,6 +4,7 @@ const logger = require('./config/logger');
 const mongoose = require('mongoose');
 const http = require('http');
 const { initSocket, shutdownSocket } = require('./socket');
+const { biddingQueue } = require('./jobs');
 let server;
 
 mongoose
@@ -19,6 +20,10 @@ mongoose
 server = http.createServer(app);
 initSocket(server);
 
+// Initialize Bull worker for background jobs
+require('./jobs/workers/bidding.worker');
+logger.info('Bull worker initialized');
+
 server.listen(config.port, () => {
   console.log(`BiddingMaster app listening on port ${config.port}!`);
 });
@@ -33,6 +38,12 @@ const exitHandler = () => {
         logger.info('Socket.IO closed');
       } catch (e) {
         logger.warn(`Socket shutdown error: ${e.message}`);
+      }
+      try {
+        await biddingQueue.close();
+        logger.info('Bull queue closed');
+      } catch (e) {
+        logger.warn(`Bull queue shutdown error: ${e.message}`);
       }
       process.exit(1);
     });
