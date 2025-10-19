@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
 const moment = require('moment-timezone');
 const { REQUIREMENT_STATUS, PARTICIPANT_STATUS } = require('../constants/requirement');
+const { biddingQueue } = require('../jobs');
 
 /**
  * Create a requirement
@@ -38,6 +39,19 @@ const createRequirement = async (requirementBody, userId) => {
     participants,
     createdBy: userId,
   });
+
+  // Schedule job to close bidding at endTime if status is ACTIVE
+  if (requirement.status === REQUIREMENT_STATUS.ACTIVE && requirement.endTime) {
+    const delay = new Date(requirement.endTime).getTime() - Date.now();
+    if (delay > 0) {
+      await biddingQueue.add(
+        'close-bidding',
+        { requirementId: requirement._id.toString() },
+        { delay, jobId: `close-bidding-${requirement._id}` }
+      );
+      logger.info(`Scheduled close-bidding job for requirement ${requirement._id} at ${requirement.endTime}`);
+    }
+  }
 
   return requirement;
 };
@@ -129,6 +143,42 @@ const updateRequirementById = async (requirementId, updateBody, userId) => {
   }
 
   await requirement.save();
+
+  // Handle job scheduling for status transitions
+  if (isActivating && requirement.endTime) {
+    // Schedule close-bidding job when transitioning to ACTIVE
+    const delay = new Date(requirement.endTime).getTime() - Date.now();
+    if (delay > 0) {
+      await biddingQueue.add(
+        'close-bidding',
+        { requirementId: requirement._id.toString() },
+        { delay, jobId: `close-bidding-${requirement._id}` }
+      );
+      logger.info(`Scheduled close-bidding job for requirement ${requirement._id} at ${requirement.endTime}`);
+    }
+  } else if (requirement.status === REQUIREMENT_STATUS.ACTIVE && updateBody.endTime) {
+    // If endTime is updated while ACTIVE, reschedule the job
+    try {
+      const existingJob = await biddingQueue.getJob(`close-bidding-${requirement._id}`);
+      if (existingJob) {
+        await existingJob.remove();
+        logger.info(`Removed old close-bidding job for requirement ${requirement._id}`);
+      }
+    } catch (err) {
+      logger.warn(`Could not remove old job: ${err.message}`);
+    }
+    
+    const delay = new Date(requirement.endTime).getTime() - Date.now();
+    if (delay > 0) {
+      await biddingQueue.add(
+        'close-bidding',
+        { requirementId: requirement._id.toString() },
+        { delay, jobId: `close-bidding-${requirement._id}` }
+      );
+      logger.info(`Rescheduled close-bidding job for requirement ${requirement._id} at ${requirement.endTime}`);
+    }
+  }
+
   return requirement;
 };
 
@@ -144,6 +194,17 @@ const deleteRequirementById = async (requirementId, userId) => {
   // Check if user is the creator
   if (requirement.createdBy._id.toString() !== userId.toString()) {
     throw new ApiError(httpStatus.FORBIDDEN, 'You can only delete your own requirements');
+  }
+
+  // Remove scheduled job if exists
+  try {
+    const existingJob = await biddingQueue.getJob(`close-bidding-${requirementId}`);
+    if (existingJob) {
+      await existingJob.remove();
+      logger.info(`Removed close-bidding job for deleted requirement ${requirementId}`);
+    }
+  } catch (err) {
+    logger.warn(`Could not remove job for deleted requirement: ${err.message}`);
   }
 
   await requirement.remove();
