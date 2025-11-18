@@ -1,8 +1,13 @@
-const { biddingQueue } = require('../queues/bidding.queue');
-const { Requirement, Bid, User } = require('../../models');
-const { REQUIREMENT_STATUS } = require('../../constants/requirement');
-const { emailService } = require('../../microservices');
+const {biddingQueue} = require('../queues/bidding.queue');
+const {Requirement, Bid, User} = require('../../models');
+const {REQUIREMENT_STATUS} = require('../../constants/requirement');
+const {emailService} = require('../../microservices');
 const logger = require('../../config/logger');
+const {
+  noBidsReceivedEmail,
+  biddingEndedWithWinnerCreatorEmail,
+  biddingWinnerEmail,
+} = require('../../utils/emailTemplates');
 
 /**
  * Process 'close-bidding' job
@@ -10,8 +15,8 @@ const logger = require('../../config/logger');
  * - Update requirement status (CLOSED if no bids, AWARDED if winner exists)
  * - Send emails to creator and winner
  */
-biddingQueue.process('close-bidding', async (job) => {
-  const { requirementId } = job.data;
+biddingQueue.process('close-bidding', async job => {
+  const {requirementId} = job.data;
   logger.info(`Processing close-bidding job for requirement: ${requirementId}`);
 
   try {
@@ -20,18 +25,18 @@ biddingQueue.process('close-bidding', async (job) => {
 
     if (!requirement) {
       logger.warn(`Requirement ${requirementId} not found, skipping job`);
-      return { success: false, reason: 'Requirement not found' };
+      return {success: false, reason: 'Requirement not found'};
     }
 
     // Skip if already closed or awarded
     if (requirement.status === REQUIREMENT_STATUS.CLOSED || requirement.status === REQUIREMENT_STATUS.AWARDED) {
       logger.info(`Requirement ${requirementId} already ${requirement.status}, skipping`);
-      return { success: true, reason: `Already ${requirement.status}` };
+      return {success: true, reason: `Already ${requirement.status}`};
     }
 
     // 2. Find winning bid (lowest offeredPrice, earliest createdAt as tiebreaker)
-    const winningBid = await Bid.findOne({ requirement: requirementId })
-      .sort({ offeredPrice: 1, createdAt: 1 })
+    const winningBid = await Bid.findOne({requirement: requirementId})
+      .sort({offeredPrice: 1, createdAt: 1})
       .populate('bidder', 'email firstName lastName')
       .lean();
 
@@ -46,29 +51,18 @@ biddingQueue.process('close-bidding', async (job) => {
       // 4. Send email to creator (no bids)
       if (requirement.createdBy?.email) {
         try {
-          await emailService.sendEmail(
-            requirement.createdBy.email,
-            `Bidding Ended: ${requirement.title}`,
-            {
-              text: `Hello ${requirement.createdBy.firstName || 'there'},
-
-Your requirement "${requirement.title}" has ended.
-
-Unfortunately, no bids were received for this requirement.
-
-You can create a new requirement or modify the existing one to attract more bidders.
-
-Best regards,
-BiddingMaster Team`,
-            }
-          );
+          const { subject, html } = noBidsReceivedEmail({
+  creatorName: requirement.createdBy.firstName,
+  requirementTitle: requirement.title,
+});
+await emailService.sendEmail(requirement.createdBy.email, subject, { html });
           logger.info(`No-bids email sent to creator: ${requirement.createdBy.email}`);
         } catch (emailErr) {
           logger.error(`Failed to send no-bids email to creator: ${emailErr.message}`);
         }
       }
 
-      return { success: true, status: 'CLOSED', bids: 0 };
+      return {success: true, status: 'CLOSED', bids: 0};
     }
 
     // Winner exists
@@ -80,26 +74,16 @@ BiddingMaster Team`,
     // 5. Send email to creator (with winner details)
     if (requirement.createdBy?.email) {
       try {
-        await emailService.sendEmail(
-          requirement.createdBy.email,
-          `Bidding Ended: ${requirement.title}`,
-          {
-            text: `Hello ${requirement.createdBy.firstName || 'there'},
-
-Your requirement "${requirement.title}" has ended successfully!
-
-Winner Details:
-- Name: ${winningBid.bidder.firstName || ''} ${winningBid.bidder.lastName || ''}
-- Email: ${winningBid.bidder.email}
-- Winning Bid: ${requirement.currency || 'INR'} ${winningBid.offeredPrice}
-${winningBid.deliveryDays ? `- Delivery Days: ${winningBid.deliveryDays}` : ''}
-
-You can now proceed to contact the winner and finalize the deal.
-
-Best regards,
-BiddingMaster Team`,
-          }
-        );
+        const { subject: creatorSubject, html: creatorHtml } = biddingEndedWithWinnerCreatorEmail({
+  creatorName: requirement.createdBy.firstName,
+  requirementTitle: requirement.title,
+  winnerName: `${winningBid.bidder.firstName || ''} ${winningBid.bidder.lastName || ''}`.trim(),
+  winnerEmail: winningBid.bidder.email,
+  winningBid: winningBid.offeredPrice,
+  currency: requirement.currency,
+  deliveryDays: winningBid.deliveryDays,
+});
+await emailService.sendEmail(requirement.createdBy.email, creatorSubject, { html: creatorHtml });
         logger.info(`Winner notification email sent to creator: ${requirement.createdBy.email}`);
       } catch (emailErr) {
         logger.error(`Failed to send winner email to creator: ${emailErr.message}`);
@@ -109,27 +93,16 @@ BiddingMaster Team`,
     // 6. Send email to winner
     if (winningBid.bidder?.email) {
       try {
-        await emailService.sendEmail(
-          winningBid.bidder.email,
-          `Congratulations! You Won: ${requirement.title}`,
-          {
-            text: `Hello ${winningBid.bidder.firstName || 'there'},
-
-Congratulations! You have won the bid for "${requirement.title}"!
-
-Your Winning Bid: ${requirement.currency || 'INR'} ${winningBid.offeredPrice}
-${winningBid.deliveryDays ? `Delivery Days: ${winningBid.deliveryDays}` : ''}
-
-The requirement creator will contact you soon to finalize the details.
-
-Creator Contact:
-- Name: ${requirement.createdBy.firstName || ''} ${requirement.createdBy.lastName || ''}
-- Email: ${requirement.createdBy.email}
-
-Best regards,
-BiddingMaster Team`,
-          }
-        );
+        const { subject: winnerSubject, html: winnerHtml } = biddingWinnerEmail({
+  bidderName: winningBid.bidder.firstName,
+  requirementTitle: requirement.title,
+  winningBid: winningBid.offeredPrice,
+  currency: requirement.currency,
+  deliveryDays: winningBid.deliveryDays,
+  creatorName: `${requirement.createdBy.firstName || ''} ${requirement.createdBy.lastName || ''}`.trim(),
+  creatorEmail: requirement.createdBy.email,
+});
+await emailService.sendEmail(winningBid.bidder.email, winnerSubject, { html: winnerHtml });
         logger.info(`Congratulations email sent to winner: ${winningBid.bidder.email}`);
       } catch (emailErr) {
         logger.error(`Failed to send congratulations email to winner: ${emailErr.message}`);
@@ -152,4 +125,4 @@ BiddingMaster Team`,
 
 logger.info('Bidding worker initialized and listening for jobs');
 
-module.exports = { biddingQueue };
+module.exports = {biddingQueue};
