@@ -17,7 +17,7 @@ biddingQueue.process('close-bidding', async (job) => {
   try {
     // 1. Fetch requirement with creator details
     const requirement = await Requirement.findById(requirementId).populate('createdBy', 'email firstName lastName');
-    
+
     if (!requirement) {
       logger.warn(`Requirement ${requirementId} not found, skipping job`);
       return { success: false, reason: 'Requirement not found' };

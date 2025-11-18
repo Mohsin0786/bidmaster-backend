@@ -1,6 +1,5 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
-const ApiError = require('../utils/ApiError');
 const { requirementService } = require('../services');
 const { fileUploadService } = require('../microservices');
 
@@ -26,7 +25,7 @@ const createRequirement = catchAsync(async (req, res) => {
   }
 
   const requirement = await requirementService.createRequirement(payload, req.user._id);
-  res.status(httpStatus.CREATED).json({ data: requirement,status:true });
+  res.status(httpStatus.CREATED).json({ data: requirement, status: true });
 });
 
 // GET /v1/requirements
@@ -51,7 +50,7 @@ const getRequirements = catchAsync(async (req, res) => {
 // GET /v1/requirements/:requirementId
 const getRequirement = catchAsync(async (req, res) => {
   const requirement = await requirementService.getRequirementById(req.params.requirementId);
-  res.json({ data: requirement,status:true });
+  res.json({ data: requirement, status: true });
 });
 
 // PATCH /v1/requirements/:requirementId
@@ -74,7 +73,7 @@ const updateRequirement = catchAsync(async (req, res) => {
     req.body,
     req.user._id
   );
-  res.json({ data: requirement,status:true });
+  res.json({ data: requirement, status: true });
 });
 
 // DELETE /v1/requirements/:requirementId
@@ -87,9 +86,9 @@ const deleteRequirement = catchAsync(async (req, res) => {
 const getInvitedRequirements = catchAsync(async (req, res) => {
   const { sortBy, sortOrder, page, limit, window } = req.query;
   const options = { sortBy, sortOrder, page, limit };
-  const timezone =  req.get('X-Timezone')|| 'UTC';
+  const timezone = req.get('X-Timezone') || 'UTC';
   const result = await requirementService.listInvitedActiveRequirements(req.user, options, window, timezone);
-  return res.json({ data: result,status:true });
+  return res.json({ data: result, status: true });
 });
 
 

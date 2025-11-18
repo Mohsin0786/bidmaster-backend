@@ -21,8 +21,18 @@ const createRequirement = {
         .positive()
         .when('status', { is: 'ACTIVE', then: Joi.required(), otherwise: Joi.optional() }),
       startTime: Joi.date()
-        .iso()
-        .when('status', { is: 'ACTIVE', then: Joi.required(), otherwise: Joi.optional() }),
+  .iso()
+  .when('status', {
+    is: 'ACTIVE',
+    then: Joi.date()
+      .iso()
+      .greater('now')   // works correctly with UTC
+      .required()
+      .messages({
+        "date.greater": "startTime cannot be in the past"
+      }),
+    otherwise: Joi.date().optional()
+  }),
       endTime: Joi.date()
         .iso()
         .greater(Joi.ref('startTime'))
