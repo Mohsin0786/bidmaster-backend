@@ -106,7 +106,40 @@ const createRequirement = async (requirementBody, userId) => {
  * @returns {Promise<QueryResult>}
  */
 const queryRequirements = async (filter, options) => {
-  const requirements = await Requirement.paginate(filter, options);
+  // Add pipeline to compute totalBidders (distinct bidders who placed a bid on this requirement)
+  const pipeline = [
+    {
+      $lookup: {
+        from: 'bids',
+        localField: '_id',
+        foreignField: 'requirement',
+        as: 'bids_for_req',
+      },
+    },
+    {
+      $addFields: {
+        totalBidders: {
+          $size: {
+            $setUnion: [
+              {
+                $map: { input: '$bids_for_req', as: 'b', in: '$$b.bidder' },
+              },
+              [],
+            ],
+          },
+        },
+      },
+    },
+    { $unset: 'bids_for_req' },
+  ];
+
+  // Merge with any existing pipeline in options
+  const paginateOptions = {
+    ...options,
+    pipeline: [...(options.pipeline || []), ...pipeline],
+  };
+
+  const requirements = await Requirement.paginate(filter, paginateOptions);
   return requirements;
 };
 
@@ -210,7 +243,7 @@ const updateRequirementById = async (requirementId, updateBody, userId) => {
     } catch (err) {
       logger.warn(`Could not remove old job: ${err.message}`);
     }
-    
+
     const delay = new Date(requirement.endTime).getTime() - Date.now();
     if (delay > 0) {
       await biddingQueue.add(
@@ -321,18 +354,18 @@ const listInvitedActiveRequirements = async (user, options, window = 'all', time
     { $unset: 'bids_for_req' },
   ];
 
-  const project = {
-    title: 1,
-    category: 1,
-    startTime: 1,
-    endTime: 1,
-    createdBy: 1,
-    createdAt: 1,
-    ceilingPrice: 1,
-    totalBidders: 1,
-  }; // only include these
+  // const project = {
+  //   title: 1,
+  //   category: 1,
+  //   startTime: 1,
+  //   endTime: 1,
+  //   createdBy: 1,
+  //   createdAt: 1,
+  //   ceilingPrice: 1,
+  //   totalBidders: 1,
+  // }; // only include these
 
-  const paginateOptions = { ...options, populate, project, pipeline };
+  const paginateOptions = { ...options, populate, pipeline };
   return Requirement.paginate(filter, paginateOptions);
 };
 module.exports = {
