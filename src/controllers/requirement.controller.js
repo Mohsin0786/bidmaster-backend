@@ -41,6 +41,7 @@ const getRequirements = catchAsync(async (req, res) => {
     limit: query.limit,
     sortBy: query.sortBy,
     sortOrder: query.sortOrder,
+    populate: 'createdBy::firstName,lastName,email',
   };
 
   const data = await requirementService.queryRequirements(filter, options);
@@ -81,6 +82,8 @@ const deleteRequirement = catchAsync(async (req, res) => {
   await requirementService.deleteRequirementById(req.params.requirementId, req.user._id);
   res.status(httpStatus.NO_CONTENT).send();
 });
+
+
 
 // GET /v1/requirements/invited
 const getInvitedRequirements = catchAsync(async (req, res) => {
