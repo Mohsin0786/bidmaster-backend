@@ -105,7 +105,9 @@ const createRequirement = async (requirementBody, userId) => {
  * @param {Object} options - Query options
  * @returns {Promise<QueryResult>}
  */
-const queryRequirements = async (filter, options) => {
+const queryRequirements = async (filter, options, timezone = 'UTC') => {
+  const now = new Date();
+
   // Add pipeline to compute totalBidders (distinct bidders who placed a bid on this requirement)
   const pipeline = [
     {
@@ -126,6 +128,19 @@ const queryRequirements = async (filter, options) => {
               },
               [],
             ],
+          },
+        },
+        window: {
+          $cond: {
+            if: { $gt: ['$startTime', now] },
+            then: 'upcoming',
+            else: {
+              $cond: {
+                if: { $gt: ['$endTime', now] },
+                then: 'live',
+                else: 'closed',
+              },
+            },
           },
         },
       },
@@ -312,7 +327,8 @@ const createTimeFilters = (now) => ({
 });
 
 const listInvitedActiveRequirements = async (user, options, window = 'all', timezone) => {
-  const now = moment().tz(timezone).toDate();
+  // Use current absolute time (UTC) for window calculation
+  const now = new Date();
   logger.info(`Current time in ${timezone}: ${now}`);
   const baseInvited = createBaseInvitedFilter(user);
   const timeFilters = createTimeFilters(now);
@@ -349,25 +365,28 @@ const listInvitedActiveRequirements = async (user, options, window = 'all', time
             ],
           },
         },
+        window: {
+          $cond: {
+            if: { $gt: ['$startTime', now] },
+            then: 'upcoming',
+            else: {
+              $cond: {
+                if: { $gt: ['$endTime', now] },
+                then: 'live',
+                else: 'closed',
+              },
+            },
+          },
+        },
       },
     },
     { $unset: 'bids_for_req' },
   ];
 
-  // const project = {
-  //   title: 1,
-  //   category: 1,
-  //   startTime: 1,
-  //   endTime: 1,
-  //   createdBy: 1,
-  //   createdAt: 1,
-  //   ceilingPrice: 1,
-  //   totalBidders: 1,
-  // }; // only include these
-
   const paginateOptions = { ...options, populate, pipeline };
   return Requirement.paginate(filter, paginateOptions);
 };
+
 module.exports = {
   createRequirement,
   queryRequirements,

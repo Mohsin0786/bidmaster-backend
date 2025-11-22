@@ -32,9 +32,11 @@ const createRequirement = catchAsync(async (req, res) => {
 const getRequirements = catchAsync(async (req, res) => {
   const { query } = req;
   const filter = {};
+  const timezone = req.get('X-Timezone') || 'UTC';
   if (query.title) filter.title = new RegExp(query.title, 'i');
   if (query.category) filter.category = query.category;
   if (query.status) filter.status = query.status;
+
 
   const options = {
     page: query.page,
@@ -44,7 +46,7 @@ const getRequirements = catchAsync(async (req, res) => {
     populate: 'createdBy::firstName,lastName,email',
   };
 
-  const data = await requirementService.queryRequirements(filter, options);
+  const data = await requirementService.queryRequirements(filter, options, timezone);
   res.json({ data });
 });
 
