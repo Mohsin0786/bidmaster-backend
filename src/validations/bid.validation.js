@@ -49,4 +49,12 @@ const listMyBids = {
   }),
 };
 
-module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids };
+
+const getMyBidStatus = {
+  query: Joi.object().keys({
+    requirementId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids, getMyBidStatus };
+
