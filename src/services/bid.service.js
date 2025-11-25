@@ -312,7 +312,8 @@ async function listMyBids({ user, status, options, timezone }) {
 
 /**
  * Get bid status for current user including rank, currentBest, and myBid
- * This mirrors the data sent via socket in notifyAllBiddersRanks
+ * If user has placed a bid: returns rank, myBid details, currentBest, and totalBidders
+ * If user hasn't placed a bid: returns currentBest with other fields as null
  */
 async function getMyBidStatus({ requirementId, user }) {
   const requirement = await Requirement.findById(requirementId);
@@ -320,19 +321,25 @@ async function getMyBidStatus({ requirementId, user }) {
 
   // Find user's bid
   const myBid = await Bid.findOne({ requirement: requirementId, bidder: user._id });
-  if (!myBid) throw new ApiError(httpStatus.NOT_FOUND, 'No bid found for this requirement by this user');
 
   // Fetch all bids sorted by offeredPrice asc, createdAt asc for stable ranking
   const bids = await Bid.find({ requirement: requirementId })
     .sort({ offeredPrice: 1, createdAt: 1 })
     .select('_id bidder offeredPrice deliveryDays createdAt');
 
-  if (!bids || bids.length === 0) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'No bids found for this requirement');
-  }
-
   // Get currentBest (lowest offer)
-  const currentBest = bids[0]?.offeredPrice ?? null;
+  const currentBest = bids.length > 0 ? bids[0]?.offeredPrice ?? null : null;
+
+  // If user has not placed a bid, return currentBest with null values for other fields
+  if (!myBid) {
+    return {
+      requirementId: requirementId.toString(),
+      rank: null,
+      currentBest,
+      myBid: null,
+      totalBidders: bids.length,
+    };
+  }
 
   // Find user's rank
   let rank = null;
