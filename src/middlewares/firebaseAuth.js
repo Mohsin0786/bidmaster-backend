@@ -6,18 +6,12 @@ const {firebase} = require('../config/config');
 const {authService} = require('../services');
 const logger  = require('../config/logger');
 
-const serviceAccountData = firebase.serviceAccount;
+const serviceAccountData = firebase.serviceAccount || require('../firebase-service-secret.json');
 
 if (serviceAccountData) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccountData),
   });
-} else {
-  // Render (and most cloud hosts) should provide Firebase Admin credentials via env vars.
-  // Keeping this as a warning so local dev without Firebase doesn't crash on boot.
-  logger.warn(
-    'Firebase Admin not initialized: missing service account. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_B64 (or legacy FIREBASE_SERVICE_ACCOUNT).'
-  );
 }
 
 const firebaseAuth = (allowUserType = 'All') => async (req, res, next) => {
