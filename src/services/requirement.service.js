@@ -1,6 +1,8 @@
 const httpStatus = require('http-status');
 const { Requirement } = require('../models');
 const { User } = require('../models');
+const { sendBatchEmail } = require('../microservices/email.service');
+const { invitationEmail } = require('../utils/emailTemplates');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
 const moment = require('moment-timezone');
@@ -13,25 +15,65 @@ const { biddingQueue } = require('../jobs');
  * @param {string} userId - ID of the user creating the requirement
  * @returns {Promise<Requirement>}
  */
+// Helper: Prepare batch emails for participants
+function buildInvitationEmails(emails, creator, requirementTitle) {
+  const creatorName = `${creator.firstName || ''} ${creator.lastName || ''}`.trim() || 'A user';
+  return emails.map(({ email, user }) => ({
+    email,
+    ...invitationEmail({
+      creatorName,
+      requirementTitle,
+      isExistingUser: !!user,
+      requirementId: 'REQUIREMENT_ID', // placeholder
+      recipientEmail: email,
+    })
+  }));
+}
+
+// Helper: Prepare participants array
+async function buildParticipantListAndUserMap(participantEmails, creatorEmail) {
+  const filteredEmails = participantEmails.filter(email => email !== creatorEmail);
+  const users = await User.find({ email: { $in: filteredEmails } });
+  const userMap = new Map(users.map(u => [u.email, u]));
+  const participants = filteredEmails.map(email => ({
+    email,
+    userId: userMap.get(email)?._id || null,
+    status: PARTICIPANT_STATUS.INVITED,
+  }));
+  return { participants, userMap };
+}
+
+// Helper: Schedule bidding job
+async function scheduleBiddingJob(requirement) {
+  const delay = new Date(requirement.endTime).getTime() - Date.now();
+  if (delay > 0) {
+    await biddingQueue.add(
+      'close-bidding',
+      { requirementId: requirement._id.toString() },
+      { delay, jobId: `close-bidding-${requirement._id}` }
+    );
+    logger.info(`Scheduled close-bidding job for requirement ${requirement._id} at ${requirement.endTime}`);
+  }
+}
+
 const createRequirement = async (requirementBody, userId) => {
   const { participantEmails, status, ...rest } = requirementBody;
 
   let participants = [];
-  // Only prepare participant invitations for ACTIVE requirements
-  if (status !== REQUIREMENT_STATUS.DRAFT && participantEmails && participantEmails.length > 0) {
-    for (const email of participantEmails) {
-      const user = await User.findOne({ email });
-      participants.push({
-        email,
-        userId: user ? user._id : null,
-        status: PARTICIPANT_STATUS.INVITED,
-      });
-      logger.info(
-        `Participant ${email} ${user ? `found (userId: ${user._id})` : 'invited (not yet registered)'}.`
-      );
-    }
+  let invitationEmails = [];
+
+  if (status !== REQUIREMENT_STATUS.DRAFT && Array.isArray(participantEmails) && participantEmails.length > 0) {
+    const creator = await User.findById(userId);
+    const creatorEmail = creator?.email;
+    const requirementTitle = rest.title || 'New Requirement';
+    const { participants: participantList, userMap: emailToUserMap } = await buildParticipantListAndUserMap(participantEmails, creatorEmail);
+    participants = participantList;
+    invitationEmails = buildInvitationEmails(
+      participantEmails.filter(email => email !== creatorEmail).map(email => ({ email, user: emailToUserMap.get(email) })),
+      creator,
+      requirementTitle
+    );
   }
-  logger.info('Requirement created successfully');
 
   const requirement = await Requirement.create({
     ...rest,
@@ -40,17 +82,18 @@ const createRequirement = async (requirementBody, userId) => {
     createdBy: userId,
   });
 
-  // Schedule job to close bidding at endTime if status is ACTIVE
+  logger.info('Requirement created successfully');
+
+  if (invitationEmails.length > 0) {
+    const requirementId = requirement._id.toString();
+    invitationEmails.forEach(emailObj => {
+      emailObj.html = emailObj.html.replace(/REQUIREMENT_ID/g, requirementId);
+    });
+    sendBatchEmail(invitationEmails).catch(e => logger.error('Batch invite email error:', e));
+  }
+
   if (requirement.status === REQUIREMENT_STATUS.ACTIVE && requirement.endTime) {
-    const delay = new Date(requirement.endTime).getTime() - Date.now();
-    if (delay > 0) {
-      await biddingQueue.add(
-        'close-bidding',
-        { requirementId: requirement._id.toString() },
-        { delay, jobId: `close-bidding-${requirement._id}` }
-      );
-      logger.info(`Scheduled close-bidding job for requirement ${requirement._id} at ${requirement.endTime}`);
-    }
+    await scheduleBiddingJob(requirement);
   }
 
   return requirement;
@@ -62,8 +105,56 @@ const createRequirement = async (requirementBody, userId) => {
  * @param {Object} options - Query options
  * @returns {Promise<QueryResult>}
  */
-const queryRequirements = async (filter, options) => {
-  const requirements = await Requirement.paginate(filter, options);
+const queryRequirements = async (filter, options, timezone = 'UTC') => {
+  const now = new Date();
+
+  // Add pipeline to compute totalBidders (distinct bidders who placed a bid on this requirement)
+  const pipeline = [
+    {
+      $lookup: {
+        from: 'bids',
+        localField: '_id',
+        foreignField: 'requirement',
+        as: 'bids_for_req',
+      },
+    },
+    {
+      $addFields: {
+        totalBidders: {
+          $size: {
+            $setUnion: [
+              {
+                $map: { input: '$bids_for_req', as: 'b', in: '$$b.bidder' },
+              },
+              [],
+            ],
+          },
+        },
+        window: {
+          $cond: {
+            if: { $gt: ['$startTime', now] },
+            then: 'upcoming',
+            else: {
+              $cond: {
+                if: { $gt: ['$endTime', now] },
+                then: 'live',
+                else: 'closed',
+              },
+            },
+          },
+        },
+      },
+    },
+    { $unset: 'bids_for_req' },
+  ];
+
+  // Merge with any existing pipeline in options
+  const paginateOptions = {
+    ...options,
+    pipeline: [...(options.pipeline || []), ...pipeline],
+  };
+
+  const requirements = await Requirement.paginate(filter, paginateOptions);
   return requirements;
 };
 
@@ -167,7 +258,7 @@ const updateRequirementById = async (requirementId, updateBody, userId) => {
     } catch (err) {
       logger.warn(`Could not remove old job: ${err.message}`);
     }
-    
+
     const delay = new Date(requirement.endTime).getTime() - Date.now();
     if (delay > 0) {
       await biddingQueue.add(
@@ -236,7 +327,8 @@ const createTimeFilters = (now) => ({
 });
 
 const listInvitedActiveRequirements = async (user, options, window = 'all', timezone) => {
-  const now = moment().tz(timezone).toDate();
+  // Use current absolute time (UTC) for window calculation
+  const now = new Date();
   logger.info(`Current time in ${timezone}: ${now}`);
   const baseInvited = createBaseInvitedFilter(user);
   const timeFilters = createTimeFilters(now);
@@ -273,25 +365,28 @@ const listInvitedActiveRequirements = async (user, options, window = 'all', time
             ],
           },
         },
+        window: {
+          $cond: {
+            if: { $gt: ['$startTime', now] },
+            then: 'upcoming',
+            else: {
+              $cond: {
+                if: { $gt: ['$endTime', now] },
+                then: 'live',
+                else: 'closed',
+              },
+            },
+          },
+        },
       },
     },
     { $unset: 'bids_for_req' },
   ];
 
-  const project = {
-    title: 1,
-    category: 1,
-    startTime: 1,
-    endTime: 1,
-    createdBy: 1,
-    createdAt: 1,
-    ceilingPrice: 1,
-    totalBidders: 1,
-  }; // only include these
-
-  const paginateOptions = { ...options, populate, project, pipeline };
+  const paginateOptions = { ...options, populate, pipeline };
   return Requirement.paginate(filter, paginateOptions);
 };
+
 module.exports = {
   createRequirement,
   queryRequirements,

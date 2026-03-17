@@ -142,10 +142,10 @@ async function createBid({ user, requirementId, offeredPrice, deliveryDays, note
   //     currentBest: newBest,
   //     rank,
   //   });
-    // Notify all bidders of their current rank and leading bid
-    try { await notifyAllBiddersRanks(requirement._id); } catch (_) {}
-    // Broadcast updated unique bidder count to the requirement room
-    try { await emitRequirementStats(requirement._id); } catch (_) {}
+  // Notify all bidders of their current rank and leading bid
+  try { await notifyAllBiddersRanks(requirement._id); } catch (_) { }
+  // Broadcast updated unique bidder count to the requirement room
+  try { await emitRequirementStats(requirement._id); } catch (_) { }
   // } catch (e) {
   //   // Do not block API on socket errors
   //   logger.warn(`Socket emit failed for requirement ${requirement._id}: ${e.message}`);
@@ -218,23 +218,23 @@ async function updateBid({ user, bidId, offeredPrice, deliveryDays, notes, attac
   // Emit update with current rank and best price
   // try {
   //   const newBest = await getCurrentBestPrice(requirement._id);
-    // await emitBidUpdated({
-    //   requirementId: requirement._id.toString(),
-    //   bid: {
-    //     _id: bid._id.toString(),
-    //     bidder: bid.bidder.toString(),
-    //     offeredPrice: bid.offeredPrice,
-    //     deliveryDays: bid.deliveryDays,
-    //     createdAt: bid.createdAt,
-    //   },
-    //   currentBest: newBest,
-    // });
-    // Notify all bidders of their current rank and leading bid
-    try { await notifyAllBiddersRanks(requirement._id); } catch (e) {
-      logger.error('Failed to notify ranks:', e);
-    }
-    // Broadcast updated unique bidder count to the requirement room
-    // try { await emitRequirementStats(requirement._id); } catch (_) {}
+  // await emitBidUpdated({
+  //   requirementId: requirement._id.toString(),
+  //   bid: {
+  //     _id: bid._id.toString(),
+  //     bidder: bid.bidder.toString(),
+  //     offeredPrice: bid.offeredPrice,
+  //     deliveryDays: bid.deliveryDays,
+  //     createdAt: bid.createdAt,
+  //   },
+  //   currentBest: newBest,
+  // });
+  // Notify all bidders of their current rank and leading bid
+  try { await notifyAllBiddersRanks(requirement._id); } catch (e) {
+    logger.error('Failed to notify ranks:', e);
+  }
+  // Broadcast updated unique bidder count to the requirement room
+  // try { await emitRequirementStats(requirement._id); } catch (_) {}
   // } catch (e) {
   //   logger.warn(`Socket emit failed for bid update ${bid._id}: ${e.message}`);
   // }
@@ -310,4 +310,58 @@ async function listMyBids({ user, status, options, timezone }) {
   return Bid.paginate(filters, paginateOptions);
 }
 
-module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids };
+/**
+ * Get bid status for current user including rank, currentBest, and myBid
+ * If user has placed a bid: returns rank, myBid details, currentBest, and totalBidders
+ * If user hasn't placed a bid: returns currentBest with other fields as null
+ */
+async function getMyBidStatus({ requirementId, user }) {
+  const requirement = await Requirement.findById(requirementId);
+  if (!requirement) throw new ApiError(httpStatus.NOT_FOUND, 'Requirement not found');
+
+  // Find user's bid
+  const myBid = await Bid.findOne({ requirement: requirementId, bidder: user._id });
+
+  // Fetch all bids sorted by offeredPrice asc, createdAt asc for stable ranking
+  const bids = await Bid.find({ requirement: requirementId })
+    .sort({ offeredPrice: 1, createdAt: 1 })
+    .select('_id bidder offeredPrice deliveryDays createdAt');
+
+  // Get currentBest (lowest offer)
+  const currentBest = bids.length > 0 ? bids[0]?.offeredPrice ?? null : null;
+
+  // If user has not placed a bid, return currentBest with null values for other fields
+  if (!myBid) {
+    return {
+      requirementId: requirementId.toString(),
+      rank: null,
+      currentBest,
+      myBid: null,
+      totalBidders: bids.length,
+    };
+  }
+
+  // Find user's rank
+  let rank = null;
+  for (let i = 0; i < bids.length; i += 1) {
+    if (bids[i]._id.toString() === myBid._id.toString()) {
+      rank = i + 1; // 1-based
+      break;
+    }
+  }
+
+  return {
+    requirementId: requirementId.toString(),
+    rank,
+    currentBest,
+    myBid: {
+      _id: myBid._id.toString(),
+      offeredPrice: myBid.offeredPrice,
+      deliveryDays: myBid.deliveryDays,
+      createdAt: myBid.createdAt,
+    },
+    totalBidders: bids.length,
+  };
+}
+
+module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids, getMyBidStatus };

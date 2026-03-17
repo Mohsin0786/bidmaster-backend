@@ -14,4 +14,12 @@ router.use('/notifications', appNotificationRoute);
 router.use('/requirements', requirementRoute);
 router.use('/bids', bidRoute);
 
+router.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 module.exports = router;

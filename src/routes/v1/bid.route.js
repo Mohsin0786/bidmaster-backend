@@ -35,6 +35,9 @@ router.get('/my', firebaseAuth('All'), validate(bidValidation.getMyBid), bidCont
 // List all my bids with optional status filter (active|won|lost)
 router.get('/my-bids', firebaseAuth('All'), validate(bidValidation.listMyBids), bidController.listMyBids);
 
+// Get my bid status (rank, currentBest, myBid) for a requirement
+router.get('/my-status', firebaseAuth('All'), validate(bidValidation.getMyBidStatus), bidController.getMyBidStatus);
+
 
 
 module.exports = router;

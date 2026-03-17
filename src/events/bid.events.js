@@ -67,7 +67,7 @@ async function notifyAllBiddersRanks(requirementId) {
   const bids = await Bid.find({ requirement: requirementId })
     .sort({ offeredPrice: 1, createdAt: 1 })
     .select('_id bidder offeredPrice deliveryDays createdAt');
-    logger.info('notifyAllBiddersRanks', requirementId, bids.length);
+  logger.info('notifyAllBiddersRanks', requirementId, bids.length);
   if (!bids || bids.length === 0) return;
   const currentBest = bids[0]?.offeredPrice ?? null;
 

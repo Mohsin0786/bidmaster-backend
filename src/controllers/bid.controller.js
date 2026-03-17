@@ -73,4 +73,13 @@ const listMyBids = catchAsync(async (req, res) => {
   res.json({ data });
 });
 
-module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids };
+
+// GET /v1/bids/my-status?requirementId=...
+const getMyBidStatus = catchAsync(async (req, res) => {
+  const { requirementId } = req.query;
+  const status = await bidService.getMyBidStatus({ requirementId, user: req.user });
+  res.json({ data: status });
+});
+
+module.exports = { createBid, listBids, updateBid, getMyBid, listMyBids, getMyBidStatus };
+

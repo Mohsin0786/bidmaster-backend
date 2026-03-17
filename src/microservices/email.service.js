@@ -29,6 +29,38 @@ if (config.sendgrid) {
   };
 }
 
+let sendBatchEmail = null;
+if (config.sendgrid) {
+  const sgMail = require('@sendgrid/mail');
+  const { apiKey, fromEmail, fromName } = config.sendgrid;
+  sgMail.setApiKey(apiKey);
+
+  // recipients: array of { email, subject, html }
+  sendBatchEmail = async function (recipients) {
+    if (!Array.isArray(recipients) || recipients.length === 0) return;
+    const from = fromName && fromEmail ? { email: fromEmail, name: fromName } : { email: fromEmail || undefined };
+    
+    for (const recipient of recipients) {
+      const { email, subject, html } = recipient;
+      try {
+        await sgMail.send({
+          to: { email },
+          from,
+          subject,
+          html
+        });
+        console.log(`Email sent successfully to: ${email}`);
+      } catch (error) {
+        console.error(`Failed to send email to ${email}:`, error.message);
+        // Continue to next email even if one fails
+        continue;
+      }
+    }
+  };
+
+}
+
 module.exports = {
   sendEmail,
+  sendBatchEmail,
 };
