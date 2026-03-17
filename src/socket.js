@@ -76,16 +76,7 @@ function initSocket(server) {
 
   // Initialize Firebase Admin if not already
   if (!admin.apps || admin.apps.length === 0) {
-    let serviceAccountData;
-    if (config.firebase?.serviceAccount) {
-      serviceAccountData = config.firebase.serviceAccount;
-    } else {
-      try {
-        serviceAccountData = require('../firebase-service-secret.json');
-      } catch (e) {
-        // ignore if file missing, might be initialized elsewhere or fail later gracefully
-      }
-    }
+    const serviceAccountData = config.firebase?.serviceAccount;
 
     if (serviceAccountData) {
       try {
@@ -95,6 +86,10 @@ function initSocket(server) {
       } catch (e) {
         // If already initialized elsewhere, ignore
       }
+    } else {
+      logger.warn(
+        'Firebase Admin not initialized for Socket.IO auth: missing service account. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_B64 (or legacy FIREBASE_SERVICE_ACCOUNT).'
+      );
     }
   }
 

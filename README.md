@@ -31,6 +31,27 @@
 - You have to save the .env file locally with required variables mentioned in config/config.js
 - If you don't use any or specific microservice then please remove their validation & cancel their export from config/config.js, otherwise app won't run.
 
+## Render / Production setup (Firebase Admin)
+
+This backend uses **Firebase Admin SDK** (server-side) and expects a **service account** to be provided via environment variables (no `firebase-service-secret.json` file on the server).
+
+- **Recommended (most reliable)**: set `FIREBASE_SERVICE_ACCOUNT_B64` to **base64-encoded JSON**
+- **Alternative**: set `FIREBASE_SERVICE_ACCOUNT_JSON` to the **raw JSON string**
+- **Back-compat**: `FIREBASE_SERVICE_ACCOUNT` is also accepted as **base64 JSON**
+
+### Generate Base64 on Windows (PowerShell)
+
+From the project root (where your service account file is), run:
+
+```powershell
+$bytes = [System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw .\firebase-service-secret.json))
+[Convert]::ToBase64String($bytes)
+```
+
+Copy the output into Render as:
+
+- `FIREBASE_SERVICE_ACCOUNT_B64` = `<paste base64 here>`
+
 _Codebase should be like a graden where everyone can move around easily and peacefully._
 
 **_HAPPY CODING..._**

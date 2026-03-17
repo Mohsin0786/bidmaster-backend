@@ -26,6 +26,11 @@ const envVarsSchema = Joi.object()
     FIREBASE_STORAGE_BUCKET: Joi.string().required(),
     FIREBASE_MESSAGING_SENDER_ID: Joi.string().required(),
     FIREBASE_APP_ID: Joi.string().required(),
+    // Firebase Admin service account (server-side)
+    // Prefer FIREBASE_SERVICE_ACCOUNT_JSON (raw JSON) or FIREBASE_SERVICE_ACCOUNT_B64 (base64-encoded JSON).
+    // Back-compat: FIREBASE_SERVICE_ACCOUNT is treated as base64 JSON.
+    FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().optional(),
+    FIREBASE_SERVICE_ACCOUNT_B64: Joi.string().optional(),
     FIREBASE_SERVICE_ACCOUNT: Joi.string().optional(),
     // Redis (optional): local or AWS Elasticache
     REDIS_URL: Joi.string().uri().optional(),
@@ -91,9 +96,21 @@ module.exports = {
     storageBucket: envVars.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: envVars.FIREBASE_MESSAGING_SENDER_ID,
     appId: envVars.FIREBASE_APP_ID,
-    serviceAccount: envVars.FIREBASE_SERVICE_ACCOUNT 
-      ? JSON.parse(Buffer.from(envVars.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('ascii')) 
-      : null,
+    serviceAccount: (() => {
+      try {
+        if (envVars.FIREBASE_SERVICE_ACCOUNT_JSON) {
+          return JSON.parse(envVars.FIREBASE_SERVICE_ACCOUNT_JSON);
+        }
+        const b64 = envVars.FIREBASE_SERVICE_ACCOUNT_B64 || envVars.FIREBASE_SERVICE_ACCOUNT; // back-compat
+        if (b64) {
+          const json = Buffer.from(b64, 'base64').toString('utf8');
+          return JSON.parse(json);
+        }
+        return null;
+      } catch (e) {
+        throw new Error(`Config validation error: invalid Firebase service account JSON (${e.message})`);
+      }
+    })(),
   },
   // Redis configuration (optional)
   redis: {
