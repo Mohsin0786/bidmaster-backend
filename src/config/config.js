@@ -26,6 +26,7 @@ const envVarsSchema = Joi.object()
     FIREBASE_STORAGE_BUCKET: Joi.string().required(),
     FIREBASE_MESSAGING_SENDER_ID: Joi.string().required(),
     FIREBASE_APP_ID: Joi.string().required(),
+    FIREBASE_SERVICE_ACCOUNT: Joi.string().optional(),
     // Redis (optional): local or AWS Elasticache
     REDIS_URL: Joi.string().uri().optional(),
     REDIS_HOST: Joi.string().optional(),
@@ -89,7 +90,10 @@ module.exports = {
     projectId: envVars.FIREBASE_PROJECT_ID,
     storageBucket: envVars.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: envVars.FIREBASE_MESSAGING_SENDER_ID,
-    appId: envVars.FIREBASE_APP_ID
+    appId: envVars.FIREBASE_APP_ID,
+    serviceAccount: envVars.FIREBASE_SERVICE_ACCOUNT 
+      ? JSON.parse(Buffer.from(envVars.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('ascii')) 
+      : null,
   },
   // Redis configuration (optional)
   redis: {

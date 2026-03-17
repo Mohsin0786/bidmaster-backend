@@ -76,12 +76,25 @@ function initSocket(server) {
 
   // Initialize Firebase Admin if not already
   if (!admin.apps || admin.apps.length === 0) {
-    try {
-      // Reuse the same service account used in firebaseAuth middleware
-      const serviceAccount = require('../firebase-service-secret.json');
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-    } catch (e) {
-      // If already initialized elsewhere, ignore
+    let serviceAccountData;
+    if (config.firebase?.serviceAccount) {
+      serviceAccountData = config.firebase.serviceAccount;
+    } else {
+      try {
+        serviceAccountData = require('../firebase-service-secret.json');
+      } catch (e) {
+        // ignore if file missing, might be initialized elsewhere or fail later gracefully
+      }
+    }
+
+    if (serviceAccountData) {
+      try {
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccountData)
+        });
+      } catch (e) {
+        // If already initialized elsewhere, ignore
+      }
     }
   }
 

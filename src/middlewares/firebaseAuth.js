@@ -3,12 +3,25 @@ const httpStatus = require('http-status');
 const axios = require('axios');
 const ApiError = require('../utils/ApiError');
 const {firebase} = require('../config/config');
-const serviceAccount = require('../../firebase-service-secret.json');
 const {authService} = require('../services');
 const logger  = require('../config/logger');
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+
+let serviceAccountData;
+if (firebase.serviceAccount) {
+  serviceAccountData = firebase.serviceAccount;
+} else {
+  try {
+    serviceAccountData = require('../../firebase-service-secret.json');
+  } catch (e) {
+    logger.error('Firebase service account not found in config or file');
+  }
+}
+
+if (serviceAccountData) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccountData),
+  });
+}
 
 const firebaseAuth = (allowUserType = 'All') => async (req, res, next) => {
   try {
