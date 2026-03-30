@@ -123,6 +123,40 @@ await emailService.sendEmail(winningBid.bidder.email, winnerSubject, { html: win
   }
 });
 
+/**
+ * Startup recovery: close any ACTIVE requirements whose endTime has already passed.
+ * This handles cases where the server was down when the Bull job was supposed to fire.
+ */
+async function recoverExpiredRequirements() {
+  try {
+    const now = new Date();
+    const expired = await Requirement.find({
+      status: REQUIREMENT_STATUS.ACTIVE,
+      endTime: { $lte: now },
+    }).lean();
+
+    if (expired.length === 0) {
+      logger.info('Startup recovery: no expired requirements found');
+      return;
+    }
+
+    logger.info(`Startup recovery: found ${expired.length} expired requirement(s), queuing close-bidding jobs`);
+
+    for (const req of expired) {
+      await biddingQueue.add(
+        'close-bidding',
+        { requirementId: req._id.toString() },
+        { jobId: `close-bidding-recovery-${req._id}` }
+      );
+    }
+  } catch (err) {
+    logger.error('Startup recovery error:', err);
+  }
+}
+
+// Run recovery after a short delay to ensure DB connection is ready
+setTimeout(recoverExpiredRequirements, 5000);
+
 logger.info('Bidding worker initialized and listening for jobs');
 
 module.exports = {biddingQueue};

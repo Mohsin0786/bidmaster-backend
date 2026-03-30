@@ -108,6 +108,12 @@ const createRequirement = async (requirementBody, userId) => {
 const queryRequirements = async (filter, options, timezone = 'UTC') => {
   const now = new Date();
 
+  // If querying ACTIVE requirements, exclude those past their endTime
+  // (guards against jobs that failed to close the requirement on time)
+  if (filter.status === REQUIREMENT_STATUS.ACTIVE) {
+    filter.endTime = { $gt: now };
+  }
+
   // Add pipeline to compute totalBidders (distinct bidders who placed a bid on this requirement)
   const pipeline = [
     {
@@ -323,7 +329,10 @@ const createTimeFilters = (now) => ({
   upcoming: {
     startTime: { $gt: now }
   },
-  all: {} // No time filters for 'all'
+  // 'all' still excludes past-endTime to prevent expired reqs showing as active
+  all: {
+    endTime: { $gt: now }
+  }
 });
 
 const listInvitedActiveRequirements = async (user, options, window = 'all', timezone) => {
